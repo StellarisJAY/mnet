@@ -6,6 +6,7 @@ import (
 	"github.com/StellarisJAY/mnet/interface/network"
 	"log"
 	"net"
+	"sync"
 )
 
 type Connection struct {
@@ -16,16 +17,24 @@ type Connection struct {
 	cancel     context.CancelFunc
 	protocol   network.Protocol
 	sendBuffer chan network.Packet
+
+	Pending    sync.Map
+	clientSide bool
 }
 
-func MakeTcpConnection(conn net.Conn, id uint32, protocol network.Protocol) *Connection {
-	return &Connection{
+func MakeTcpConnection(conn net.Conn, id uint32, protocol network.Protocol, clientSide bool) *Connection {
+	c := &Connection{
 		conn:       conn,
 		id:         id,
 		ctx:        nil,
 		protocol:   protocol,
-		sendBuffer: make(chan network.Packet, 1024),
+		sendBuffer: make(chan network.Packet, 1<<10),
+		clientSide: clientSide,
 	}
+	if clientSide {
+		c.Pending = sync.Map{}
+	}
+	return c
 }
 
 func (c *Connection) Start() {
@@ -67,13 +76,30 @@ func (c *Connection) SendBuffered(packet network.Packet) {
 	c.sendBuffer <- packet
 }
 
+func (c *Connection) AddPending(id uint32, wait chan network.Packet) {
+	c.Pending.Store(id, wait)
+}
+
+func (c *Connection) FinishPending(id uint32, packet network.Packet) {
+	p, loaded := c.Pending.LoadAndDelete(id)
+	if loaded {
+		wait := p.(chan network.Packet)
+		wait <- packet
+	}
+}
+
 func (c *Connection) readLoop() {
 	for {
 		packet, err := c.protocol.Decode(c.conn)
 		if err != nil {
+			c.cancel()
 			break
 		}
-		c.protocol.HandleWithWorker(c, packet)
+		if c.clientSide {
+			c.FinishPending(packet.ID(), packet)
+		} else {
+			go c.protocol.HandleWithWorker(c, packet)
+		}
 	}
 }
 
@@ -83,7 +109,7 @@ func (c *Connection) writeLoop() {
 		case packet, ok := <-c.sendBuffer:
 			// channel closed, break write loop
 			if !ok {
-				break
+				return
 			}
 			// encode packet and send
 			encoded, err := c.protocol.Encode(packet)
@@ -93,7 +119,8 @@ func (c *Connection) writeLoop() {
 			}
 			_, err = c.conn.Write(encoded)
 			if err != nil {
-				break
+				c.cancel()
+				return
 			}
 		}
 	}

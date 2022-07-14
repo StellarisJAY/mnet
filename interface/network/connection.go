@@ -12,4 +12,7 @@ type Connection interface {
 
 	Send(packet Packet) error   // send a packet through connection, this function will block until written
 	SendBuffered(packet Packet) // send a packet non-blocking
+
+	AddPending(id uint32, wait chan Packet)
+	FinishPending(id uint32, packet Packet)
 }
