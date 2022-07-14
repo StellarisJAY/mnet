@@ -4,8 +4,8 @@ type ServerStartHook func()
 type ServerCloseHook func()
 
 type Server interface {
-	Start() error // Start server, returns an error if start fail
-	Close()       // Close server
+	Start() (error, chan interface{}) // Start server, returns an error if start fail
+	Close()                           // Close server
 
 	Protocol() Protocol     // Protocol bind to this connection
 	SetProtocol(p Protocol) // Bind a Protocol to this server
