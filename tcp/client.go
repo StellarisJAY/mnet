@@ -52,17 +52,14 @@ func (c *Client) Future(address string, packet network.Packet) (chan network.Pac
 }
 
 func (c *Client) Async(address string, packet network.Packet, callback func(packet network.Packet, err error)) {
-	connection := c.getConnection(address)
-	err := connection.Send(packet)
-	wait := make(chan network.Packet)
-	connection.AddPending(packet.ID(), wait)
-	c.returnConnection(address, connection)
-	if err != nil {
-		callback(nil, err)
-	}
+	future, err := c.Future(address, packet)
 	// starts a goroutine to receive response and call callback
-	go func() {
-		response := <-wait
-		callback(response, nil)
-	}()
+	go func(future chan network.Packet, err error) {
+		if err != nil {
+			callback(nil, err)
+		} else {
+			response := <-future
+			callback(response, nil)
+		}
+	}(future, err)
 }
