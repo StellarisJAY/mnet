@@ -68,10 +68,13 @@ func (s *Server) Start() (error, chan interface{}) {
 				break
 			}
 			// accepted connection, generate conn ID and bind protocol
-			connection := MakeTcpConnection(conn, atomic.AddUint32(&s.nextConnId, 1), s.proto)
+			connection := MakeTcpConnection(conn, atomic.AddUint32(&s.nextConnId, 1), s.proto, false)
 			s.conns.Store(connection, true)
 			// start connection's IO loop
-			go connection.Start()
+			go func() {
+				connection.Start()
+				s.conns.Delete(connection)
+			}()
 		}
 	}()
 	// call start hook after starting server
