@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/StellarisJAY/mnet/interface/network"
+	"github.com/StellarisJAY/mnet/route"
 	"log"
 	"net"
 	"sync"
@@ -20,9 +21,10 @@ type Connection struct {
 
 	Pending    sync.Map
 	clientSide bool
+	router     network.Router
 }
 
-func MakeTcpConnection(conn net.Conn, id uint32, protocol network.Protocol, clientSide bool) *Connection {
+func MakeTcpConnection(conn net.Conn, id uint32, protocol network.Protocol, router network.Router, clientSide bool) *Connection {
 	c := &Connection{
 		conn:       conn,
 		id:         id,
@@ -30,6 +32,7 @@ func MakeTcpConnection(conn net.Conn, id uint32, protocol network.Protocol, clie
 		protocol:   protocol,
 		sendBuffer: make(chan network.Packet, 1<<10),
 		clientSide: clientSide,
+		router:     router,
 	}
 	if clientSide {
 		c.Pending = sync.Map{}
@@ -98,7 +101,8 @@ func (c *Connection) readLoop() {
 		if c.clientSide {
 			c.FinishPending(packet.ID(), packet)
 		} else {
-			go c.protocol.HandleWithWorker(c, packet)
+			ctx := route.MakeHandlerContext(c, packet)
+			c.router.Submit(ctx)
 		}
 	}
 }

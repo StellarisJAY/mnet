@@ -19,7 +19,7 @@ func (c *Client) newConnection(address string) network.Connection {
 		return nil
 	}
 	// make connection and start IO loop
-	connection := MakeTcpConnection(conn, atomic.AddUint32(&nextConnId, 1), c.protocol, true)
+	connection := MakeTcpConnection(conn, atomic.AddUint32(&nextConnId, 1), c.protocol, nil, true)
 	go connection.Start()
 	return connection
 }

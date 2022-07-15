@@ -12,4 +12,6 @@ type Server interface {
 
 	SetServerStartHook(hook ServerStartHook) // Start hook
 	SetServerCloseHook(hook ServerCloseHook) // Close hook
+
+	AddRoute(typeCode byte, handler Handler)
 }

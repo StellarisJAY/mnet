@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/StellarisJAY/mnet/interface/network"
+	"github.com/StellarisJAY/mnet/route"
 	"log"
 	"net"
 	"os"
@@ -28,6 +29,8 @@ type Server struct {
 	startHook network.ServerStartHook
 	closeHook network.ServerCloseHook
 
+	router network.Router
+
 	closeChan chan interface{}
 }
 
@@ -39,7 +42,12 @@ func MakeTcpServer(port int, protocol network.Protocol) *Server {
 	s.nextConnId = 0
 	s.ctx, s.cancel = context.WithCancel(context.Background())
 	s.closeChan = make(chan interface{})
+	s.router = route.MakeMapRouter()
 	return s
+}
+
+func (s *Server) AddRoute(typeCode byte, handler network.Handler) {
+	s.router.Register(typeCode, handler)
 }
 
 func (s *Server) Start() (error, chan interface{}) {
@@ -68,7 +76,7 @@ func (s *Server) Start() (error, chan interface{}) {
 				break
 			}
 			// accepted connection, generate conn ID and bind protocol
-			connection := MakeTcpConnection(conn, atomic.AddUint32(&s.nextConnId, 1), s.proto, false)
+			connection := MakeTcpConnection(conn, atomic.AddUint32(&s.nextConnId, 1), s.proto, s.router, false)
 			s.conns.Store(connection, true)
 			// start connection's IO loop
 			go func() {
@@ -83,10 +91,12 @@ func (s *Server) Start() (error, chan interface{}) {
 	}
 	log.Println("TCP server started, listening: ", s.port)
 
+	s.router.StartWorkers()
 	go func() {
 		// wait for close signal
 		select {
 		case <-s.ctx.Done():
+			s.router.Close()
 			s.gracefulClose()
 		}
 	}()
