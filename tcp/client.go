@@ -1,65 +1,38 @@
 package tcp
 
 import (
+	"github.com/StellarisJAY/mnet/common"
 	"github.com/StellarisJAY/mnet/interface/network"
-	"sync"
+	"log"
+	"net"
+	"sync/atomic"
 )
 
 // Client in TCP
 type Client struct {
-	protocol  network.Protocol      // connection's protocol
-	connPools map[string]*sync.Pool // connection pools
-	mutex     sync.Mutex            // lock when initializing connection pool
+	common.BaseClient
+	protocol network.Protocol // connection's protocol
 }
+
+var nextConnId uint32 = 0
 
 func MakeTcpClient(protocol network.Protocol) *Client {
-	return &Client{
-		protocol:  protocol,
-		connPools: make(map[string]*sync.Pool),
-		mutex:     sync.Mutex{},
-	}
+	c := new(Client)
+	c.protocol = protocol
+	c.BaseClient = common.MakeBaseClient(protocol, c.newConnection)
+	return c
 }
 
-func (c *Client) Oneway(address string, packet network.Packet) error {
-	connection := c.getConnection(address)
-	defer c.returnConnection(address, connection)
-	// send packet, discard response
-	return connection.Send(packet)
-}
-
-func (c *Client) Request(address string, packet network.Packet) (response network.Packet, err error) {
-	// send and gets a channel
-	wait, err := c.Future(address, packet)
+// create a new connection to target address
+func (c *Client) newConnection(address string) network.Connection {
+	// tcp connect
+	conn, err := net.Dial("tcp", address)
 	if err != nil {
-		return nil, err
+		log.Println("create connection error, ", err)
+		return nil
 	}
-	// wait for response
-	response = <-wait
-	return
-}
-
-func (c *Client) Future(address string, packet network.Packet) (chan network.Packet, error) {
-	connection := c.getConnection(address)
-	defer c.returnConnection(address, connection)
-	// make response channel and put into connection's pending map
-	wait := make(chan network.Packet)
-	connection.AddPending(packet.ID(), wait)
-	err := connection.Send(packet)
-	if err != nil {
-		return nil, err
-	}
-	return wait, nil
-}
-
-func (c *Client) Async(address string, packet network.Packet, callback func(packet network.Packet, err error)) {
-	future, err := c.Future(address, packet)
-	// starts a goroutine to receive response and call callback
-	go func(future chan network.Packet, err error) {
-		if err != nil {
-			callback(nil, err)
-		} else {
-			response := <-future
-			callback(response, nil)
-		}
-	}(future, err)
+	// make connection and start IO loop
+	connection := MakeTcpConnection(conn, atomic.AddUint32(&nextConnId, 1), c.protocol, nil, true)
+	go connection.Start()
+	return connection
 }
