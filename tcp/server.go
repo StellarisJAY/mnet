@@ -34,7 +34,7 @@ type Server struct {
 	closeChan chan interface{}
 }
 
-func MakeTcpServer(port int, protocol network.Protocol) *Server {
+func MakeServer(port int, protocol network.Protocol) *Server {
 	s := new(Server)
 	s.port = port
 	s.proto = protocol

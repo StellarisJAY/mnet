@@ -16,7 +16,7 @@ type Client struct {
 
 var nextConnId uint32 = 0
 
-func MakeTcpClient(protocol network.Protocol) *Client {
+func MakeClient(protocol network.Protocol) *Client {
 	c := new(Client)
 	c.protocol = protocol
 	c.BaseClient = common.MakeBaseClient(protocol, c.newConnection)
