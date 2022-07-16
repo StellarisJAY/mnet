@@ -2,20 +2,21 @@ package common
 
 import (
 	"github.com/StellarisJAY/mnet/interface/network"
+	"github.com/StellarisJAY/mnet/util/pool"
 	"sync"
 )
 
 type BaseClient struct {
-	protocol      network.Protocol      // connection's protocol
-	connPools     map[string]*sync.Pool // connection pools
-	mutex         sync.Mutex            // lock when initializing connection pool
+	protocol      network.Protocol              // connection's protocol
+	connPools     map[string]*pool.SharablePool // connection pools
+	mutex         sync.Mutex                    // lock when initializing connection pool
 	newConnection func(address string) network.Connection
 }
 
 func MakeBaseClient(protocol network.Protocol, newConnection func(address string) network.Connection) BaseClient {
 	return BaseClient{
 		protocol:      protocol,
-		connPools:     make(map[string]*sync.Pool),
+		connPools:     make(map[string]*pool.SharablePool),
 		mutex:         sync.Mutex{},
 		newConnection: newConnection,
 	}
@@ -69,16 +70,16 @@ func (c *BaseClient) Async(address string, packet network.Packet, callback func(
 func (c *BaseClient) getConnection(address string) network.Connection {
 	c.mutex.Lock()
 	// create conn pool
-	pool, ok := c.connPools[address]
+	p, ok := c.connPools[address]
 	if !ok {
-		pool = &sync.Pool{New: func() interface{} {
+		p = pool.NewSharablePool(20, 20, func() interface{} {
 			return c.newConnection(address)
-		}}
-		c.connPools[address] = pool
+		})
+		c.connPools[address] = p
 	}
 	c.mutex.Unlock()
 	// get connection
-	return pool.Get().(network.Connection)
+	return p.Get().(network.Connection)
 }
 
 // return the connection to its pool after using
